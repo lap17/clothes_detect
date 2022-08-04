@@ -91,6 +91,7 @@ def func_image():
     def create_player():
         return MediaPlayer(path)
 
+    
 
     def transform(frame):
         img = frame.to_ndarray(format="bgr24")
@@ -291,6 +292,8 @@ def func_video():
     DEFAULT_CONFIDENCE_THRESHOLD = 0.4
 
     result_queue = [] 
+    global frames_count
+    frames_count = 0
 
     def get_yolo5():
         return torch.hub.load('ultralytics/yolov5', 'custom', path='last_s.pt')
@@ -316,10 +319,16 @@ def func_video():
     
     def create_player():
         return MediaPlayer(path)
-
+    
 
     def transform(frame):
-        img = frame.to_ndarray(format="bgr24")
+        with lock:
+            global frames_count 
+            frames_count+=1
+        #print(frames_count)
+        if frames_count%3==0:
+            return frame
+        img = frame.to_ndarray(format="bgr24")        
         img_ch = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         result = get_preds(img_ch)
         result = result[np.isin(result[:,-1], target_class_ids)]  
