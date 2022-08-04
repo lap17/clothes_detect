@@ -46,7 +46,7 @@ def main():
     
     if pages[1].button("Reload App"):
         reload()
-    prediction_mode = st.sidebar.radio("", ('Single image', 'Web camera', 'Local video'), index=2)
+    prediction_mode = st.sidebar.radio("", ('Single image', 'Web camera', 'Local video'), index=1)
     if prediction_mode == 'Single image':
         func_image()
     elif prediction_mode == 'Web camera':
