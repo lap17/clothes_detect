@@ -6,9 +6,8 @@ from streamlit.legacy_caching import clear_cache
 
 def main():
     gc.enable()
-    st.header("Computer Vision Demo")
-
-    st.sidebar.markdown("""<center data-parsed=""><img src="http://drive.google.com/uc?export=view&id=1Mad62XWdziqcx9wijUODpzGzqYEGhafC" align="center"></center>""",unsafe_allow_html=True,)
+    st.header("Fashion Items Detection Demo")
+    st.sidebar.markdown("""<center data-parsed=""><img src="http://drive.google.com/uc?export=view&id=1D-pN81CupHMcxb7xa5-Z6JZZIbagRqH_" align="center"></center>""",unsafe_allow_html=True,)
     st.sidebar.markdown(" ")
     
     def reload():
