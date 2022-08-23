@@ -360,7 +360,7 @@ def func_video(model):
         path = 'data/' + vid
         with open(path, mode='wb') as f:
             f.write(uploaded_video.read())
-
+    col1, col2 = st.columns([2, 1])
     with col1:
         ctx_l = webrtc_streamer(
             key="key",
