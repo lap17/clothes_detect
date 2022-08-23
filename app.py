@@ -23,13 +23,10 @@ from streamlit.legacy_caching import clear_cache
 from aiortc.contrib.media import MediaPlayer
 
 st.set_page_config(layout="wide")
+from streamlit.scriptrunner import get_script_run_ctx as get_report_ctx
 
-import telebot
-TELEBOT_TOKEN = '1530682441:AAF4dbgNZHyVI2-p-1QMAQhJ3xwGac5qzyI'
-tb = telebot.TeleBot(TELEBOT_TOKEN)
 
-def send_message_to_telegram(message):
-    tb.send_message(-1001566634524, message, disable_web_page_preview = True, parse_mode='HTML')
+
 
 lock = threading.Lock()
 
@@ -46,7 +43,6 @@ CLASSES_CUSTOM = [ 'short sleeve top', 'long sleeve top', 'short sleeve outwear'
                   'vest dress', 'sling dress', 'dress', 'handbag', 'swimwear']
 
 def main():
-    
     gc.enable()
     st.header("Fashion Items Detection Demo")
     st.sidebar.markdown("""<center data-parsed=""><img src="http://drive.google.com/uc?export=view&id=1D-pN81CupHMcxb7xa5-Z6JZZIbagRqH_" align="center"></center>""",unsafe_allow_html=True,)
@@ -161,7 +157,8 @@ def func_web(model):
     RTC_CONFIGURATION = RTCConfiguration(
        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
     ) 
-
+    #ctx1 = get_report_ctx()
+    #print(ctx1.session_id)
     result_queue = []
     
     global frames_count1
@@ -266,7 +263,8 @@ def func_video(model):
     RTC_CONFIGURATION = RTCConfiguration(
        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
     ) 
-
+    #ctx1 = get_report_ctx()
+    #print(ctx1.session_id)
     result_queue = []
     
     global frames_count
@@ -350,7 +348,6 @@ def func_video(model):
     path = ''
     uploaded_video = st.file_uploader("Upload video", type = ['mp4','mpeg','mov'], accept_multiple_files=False)
     if uploaded_video != None:
-        send_message_to_telegram(str(os.listdir('data')))
         vid = uploaded_video.name
         last_name = path.replace('data/','')
         if last_name!=vid:
