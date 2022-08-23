@@ -1,6 +1,7 @@
 import sys
 import gc
 import os
+from imutils import resize
 from typing import List
 from streamlit_webrtc import ClientSettings
 from typing import List, NamedTuple, Optional
@@ -20,14 +21,31 @@ import threading
 from streamlit_webrtc import VideoProcessorBase, webrtc_streamer, WebRtcMode, RTCConfiguration
 from streamlit.legacy_caching import clear_cache
 from aiortc.contrib.media import MediaPlayer
+st.set_page_config(layout="wide")
+
+import telebot
+TELEBOT_TOKEN = '1530682441:AAF4dbgNZHyVI2-p-1QMAQhJ3xwGac5qzyI'
+tb = telebot.TeleBot(TELEBOT_TOKEN)
+
+def send_message_to_telegram(message):
+    tb.send_message(-1001566634524, message, disable_web_page_preview = True, parse_mode='HTML')
 
 lock = threading.Lock()
 
-DEFAULT_CONFIDENCE_THRESHOLD = 0.4
+hide_table_row_index = """<style>
+                thead tr th:first-child {display:none}
+                tbody th {display:none}
+                </style>
+                """
 
-CLASSES_CUSTOM = [ 'short sleeve top', 'long sleeve top','short sleeve outwear','long sleeve outwear','vest','sling','shorts','trousers','skirt','short sleeve dress', 'long sleeve dress','vest dress','sling dress']
+DEFAULT_CONFIDENCE_THRESHOLD = 0.3
+
+CLASSES_CUSTOM = [ 'short sleeve top', 'long sleeve top', 'short sleeve outwear', 'long sleeve outwear',
+                  'vest', 'sling', 'shorts', 'trousers', 'skirt', 'short sleeve dress', 'long sleeve dress',
+                  'vest dress', 'sling dress', 'dress', 'handbag', 'swimwear']
 
 def main():
+    
     gc.enable()
     st.header("Fashion Items Detection Demo")
     st.sidebar.markdown("""<center data-parsed=""><img src="http://drive.google.com/uc?export=view&id=1D-pN81CupHMcxb7xa5-Z6JZZIbagRqH_" align="center"></center>""",unsafe_allow_html=True,)
@@ -46,28 +64,34 @@ def main():
     
     if pages[1].button("Reload App"):
         reload()
+        
+    def get_yolo5():
+        return torch.hub.load('ultralytics/yolov5', 'custom', path='best.pt')
+        
+    with st.spinner('Loading the model...'):
+        cache_key = 'custom'
+        if cache_key in st.session_state:
+            model = st.session_state[cache_key]
+        else:
+            model = get_yolo5()
+            st.session_state[cache_key] = model
+            
     prediction_mode = st.sidebar.radio("", ('Single image', 'Web camera', 'Local video'), index=1)
     if prediction_mode == 'Single image':
-        func_image()
+        func_image(model)
     elif prediction_mode == 'Web camera':
-        func_web()
+        func_web(model)
     elif prediction_mode == 'Local video':
-        func_video()
+        func_video(model)
         
-def func_image():
+def func_image(model):
+    
     RTC_CONFIGURATION = RTCConfiguration(
        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
     ) 
 
-    CLASSES_CUSTOM = [ 'short sleeve top', 'long sleeve top','short sleeve outwear','long sleeve outwear','vest','sling','shorts','trousers','skirt','short sleeve dress', 'long sleeve dress','vest dress','sling dress']
-    
-
-    DEFAULT_CONFIDENCE_THRESHOLD = 0.4
-
     result_queue = [] 
 
-    def get_yolo5():
-        return torch.hub.load('ultralytics/yolov5', 'custom', path='last_s.pt')
 
     def get_preds(img):
         return model([img]).xyxy[0].numpy()
@@ -87,50 +111,7 @@ def func_image():
             else:
                 color_dict[index] = (255,0,0)
         return color_dict
-    
-    def create_player():
-        return MediaPlayer(path)
-
-    
-
-    def transform(frame):
-        img = frame.to_ndarray(format="bgr24")
-        img_ch = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        result = get_preds(img_ch)
-        result = result[np.isin(result[:,-1], target_class_ids)]  
-        for bbox_data in result:
-            xmin, ymin, xmax, ymax, conf, label = bbox_data
-            if conf > confidence_threshold:
-                xmin = int(xmin)
-                ymin = int(ymin)
-                xmax = int(xmax)
-                ymax = int(ymax)
-                p0, p1, label = (xmin, ymin), (xmax, ymax), int(label)
-                img = cv2.rectangle(img, p0, p1, rgb_colors[label], 2) 
-                ytext = ymin - 10 if ymin - 10 > 10 else ymin + 15
-                xtext = xmin + 10
-                class_ = CLASSES[label]
-                text_for_vis = '{} {}'.format(class_, str(conf.round(2)))
-                img = cv2.putText(img, text_for_vis, (int(xtext), int(ytext)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, rgb_colors[label], 2,)
-                if agree:
-                    time_detect = datetime.datetime.now(pytz.timezone("America/New_York")).replace(tzinfo=None).strftime("%m-%d-%y %H:%M:%S")
-                    cropped_image = img[ymin:ymax, xmin:xmax]
-                    retval, buffer_img= cv2.imencode('.jpg', cropped_image)
-                    data = base64.b64encode(buffer_img).decode("utf-8")
-                    html = "<img src='data:image/jpg;base64," + data + f"""' style='display:block;margin-left:auto;margin-right:auto;width:200px;border:0;'>"""
-                    with lock:
-                        result_queue.insert(0, {'object': class_, 'time_detect': time_detect, 'confident': str(conf.round(2)), 'img': html})
-        return av.VideoFrame.from_ndarray(img, format="bgr24")
-    
-    
-    with st.spinner('Loading the model...'):
-        cache_key = 'custom'
-        if cache_key in st.session_state:
-            model = st.session_state[cache_key]
-        else:
-            model = get_yolo5()
-            st.session_state[cache_key] = model
-            
+       
     confidence_threshold = st.slider("Confidence threshold", 0.0, 1.0, DEFAULT_CONFIDENCE_THRESHOLD, 0.05)
 
     #prediction_mode = st.sidebar.radio("", ('Single image', 'Web camera', 'Local video'), index=2)
@@ -175,20 +156,16 @@ def func_image():
         st.image(img_draw, use_column_width=True)
     
     
-def func_web():
+def func_web(model):
     RTC_CONFIGURATION = RTCConfiguration(
        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
     ) 
 
-    CLASSES_CUSTOM = [ 'short sleeve top', 'long sleeve top','short sleeve outwear','long sleeve outwear','vest','sling','shorts','trousers','skirt','short sleeve dress', 'long sleeve dress','vest dress','sling dress']
+    result_queue = []
     
+    global frames_count1
+    frames_count1 = 0
 
-    DEFAULT_CONFIDENCE_THRESHOLD = 0.4
-
-    result_queue = [] 
-
-    def get_yolo5():
-        return torch.hub.load('ultralytics/yolov5', 'custom', path='last_s.pt')
 
     def get_preds(img):
         return model([img]).xyxy[0].numpy()
@@ -214,6 +191,13 @@ def func_web():
 
 
     def transform(frame):
+        with lock:
+            global frames_count1
+            frames_count1+=1
+        
+        #print(frames_count)
+        if frames_count1%4!=0:
+            return frame
         img = frame.to_ndarray(format="bgr24")
         img_ch = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         result = get_preds(img_ch)
@@ -235,21 +219,14 @@ def func_web():
                 if agree:
                     time_detect = datetime.datetime.now(pytz.timezone("America/New_York")).replace(tzinfo=None).strftime("%m-%d-%y %H:%M:%S")
                     cropped_image = img[ymin:ymax, xmin:xmax]
+                    #cropped_image = resize(cropped_image, 200, 200)
                     retval, buffer_img= cv2.imencode('.jpg', cropped_image)
                     data = base64.b64encode(buffer_img).decode("utf-8")
                     html = "<img src='data:image/jpg;base64," + data + f"""' style='display:block;margin-left:auto;margin-right:auto;width:200px;border:0;'>"""
                     with lock:
-                        result_queue.insert(0, {'object': class_, 'time_detect': time_detect, 'confident': str(conf.round(2)), 'img': html})
+                        result_queue.insert(0, {'object': class_, 'confident': str(conf.round(2)), 'img': html})
         return av.VideoFrame.from_ndarray(img, format="bgr24")
     
-    
-    with st.spinner('Loading the model...'):
-        cache_key = 'custom'
-        if cache_key in st.session_state:
-            model = st.session_state[cache_key]
-        else:
-            model = get_yolo5()
-            st.session_state[cache_key] = model
             
     confidence_threshold = st.slider("Confidence threshold", 0.0, 1.0, DEFAULT_CONFIDENCE_THRESHOLD, 0.05)
 
@@ -266,37 +243,33 @@ def func_web():
         target_class_ids = [0]
     rgb_colors = get_colors(target_class_ids)
     detected_ids = None
-    ctx = webrtc_streamer(key="example", video_frame_callback=transform,
-            rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-            media_stream_constraints={"video": True, "audio": False}, mode=WebRtcMode.SENDRECV, async_processing=True)
-    agree = st.checkbox("Enable clothes logging", value=False)
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        ctx = webrtc_streamer(key="example", video_frame_callback=transform,
+                rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+                media_stream_constraints={"video": True, "audio": False}, mode=WebRtcMode.SENDRECV, async_processing=True)
+        agree = st.checkbox("Enable clothes logging", value=False)
+    with col2:
+        labels_placeholder = st.empty()
     if agree:
         if ctx.state.playing:
-            labels_placeholder = st.empty()
             while True:
                 time.sleep(0.5)
                 with lock:
                     result_queue = result_queue[:5]
                     df = pd.DataFrame(result_queue)
+                    st.markdown(hide_table_row_index , unsafe_allow_html=True)
                     labels_placeholder.write(df.to_html(escape=False), unsafe_allow_html=True)
     
-    
-def func_video():
+def func_video(model):
     RTC_CONFIGURATION = RTCConfiguration(
        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
     ) 
 
-    CLASSES_CUSTOM = [ 'short sleeve top', 'long sleeve top','short sleeve outwear','long sleeve outwear','vest','sling','shorts','trousers','skirt','short sleeve dress', 'long sleeve dress','vest dress','sling dress']
+    result_queue = []
     
-
-    DEFAULT_CONFIDENCE_THRESHOLD = 0.4
-
-    result_queue = [] 
     global frames_count
     frames_count = 0
-
-    def get_yolo5():
-        return torch.hub.load('ultralytics/yolov5', 'custom', path='last_s.pt')
 
     def get_preds(img):
         return model([img]).xyxy[0].numpy()
@@ -325,8 +298,9 @@ def func_video():
         with lock:
             global frames_count 
             frames_count+=1
+        
         #print(frames_count)
-        if frames_count%3==0:
+        if frames_count%4!=0:
             return frame
         img = frame.to_ndarray(format="bgr24")        
         img_ch = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -349,22 +323,14 @@ def func_video():
                 if agree:
                     time_detect = datetime.datetime.now(pytz.timezone("America/New_York")).replace(tzinfo=None).strftime("%m-%d-%y %H:%M:%S")
                     cropped_image = img[ymin:ymax, xmin:xmax]
+                    #cropped_image = resize(cropped_image, 200, 200)
                     retval, buffer_img= cv2.imencode('.jpg', cropped_image)
                     data = base64.b64encode(buffer_img).decode("utf-8")
                     html = "<img src='data:image/jpg;base64," + data + f"""' style='display:block;margin-left:auto;margin-right:auto;width:200px;border:0;'>"""
                     with lock:
-                        result_queue.insert(0, {'object': class_, 'time_detect': time_detect, 'confident': str(conf.round(2)), 'img': html})
+                        result_queue.insert(0, {'object': class_, 'confident': str(conf.round(2)), 'img': html})
         return av.VideoFrame.from_ndarray(img, format="bgr24")
-    
-    
-    with st.spinner('Loading the model...'):
-        cache_key = 'custom'
-        if cache_key in st.session_state:
-            model = st.session_state[cache_key]
-        else:
-            model = get_yolo5()
-            st.session_state[cache_key] = model
-            
+           
     confidence_threshold = st.slider("Confidence threshold", 0.0, 1.0, DEFAULT_CONFIDENCE_THRESHOLD, 0.05)
 
     #prediction_mode = st.sidebar.radio("", ('Single image', 'Web camera', 'Local video'), index=2)
@@ -383,16 +349,19 @@ def func_video():
     path = ''
     uploaded_video = st.file_uploader("Upload video", type = ['mp4','mpeg','mov'], accept_multiple_files=False)
     if uploaded_video != None:
+        send_message_to_telegram(str(os.listdir('data')))
         vid = uploaded_video.name
         last_name = path.replace('data/','')
         if last_name!=vid:
             filelist = [f for f in os.listdir('data')]
             for f in filelist:
-                os.remove(os.path.join('data', f))
+                os.remove('data/' + f)
         path = 'data/' + vid
         with open(path, mode='wb') as f:
             f.write(uploaded_video.read())
-    ctx_l = webrtc_streamer(
+
+    with col1:
+        ctx_l = webrtc_streamer(
             key="key",
             mode=WebRtcMode.RECVONLY,
             rtc_configuration=RTC_CONFIGURATION,
@@ -401,17 +370,18 @@ def func_video():
                 "audio": False,
             },
             player_factory=create_player,
-            video_frame_callback=transform
-    )
-    agree = st.checkbox("Enable clothes logging", value=False)
+            video_frame_callback=transform)
+        agree = st.checkbox("Enable clothes logging", value=False)
+    with col2:
+        labels_placeholder = st.empty()
     if agree:
         if ctx_l.state.playing:
-            labels_placeholder = st.empty()
             while True:
                 time.sleep(0.5)
                 with lock:
                     result_queue = result_queue[:5]
                     df = pd.DataFrame(result_queue)
+                    st.markdown(hide_table_row_index , unsafe_allow_html=True)
                     labels_placeholder.write(df.to_html(escape=False), unsafe_allow_html=True)
 
 if __name__ == "__main__":
